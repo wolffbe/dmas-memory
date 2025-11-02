@@ -1,8 +1,10 @@
 import os
+
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import uvicorn
-import ollama
+
+from dmas_llm.client import LLMClient
 
 
 app = FastAPI(title="responder", version="1.0")
@@ -15,7 +17,14 @@ class RespondRequest(BaseModel):
 
 class Responder:
     def __init__(self, model: str):
-        self.model = model
+        if not os.getenv("MODEL"):
+            os.environ["MODEL"] = model
+
+        self.llm = LLMClient()
+        # max_tokens: maximum number of tokens to generate in the completion
+        self.max_tokens = int(os.getenv("MAX_TOKENS", "512"))
+        # temperature: 0-2, lower is more deterministic (0 for factual responses)
+        self.temperature = float(os.getenv("TEMPERATURE", "0"))
     
     def respond(self, question: str, context: str) -> dict:
         try:
@@ -24,20 +33,20 @@ class Responder:
             
             prompt = f"""Based on the following context, answer the question.
 
-CONTEXT:
-{context}
+                CONTEXT:
+                {context}
 
-QUESTION: {question}
+                QUESTION: {question}
 
-Answer:"""
+                Answer:"""
             
-            response = ollama.chat(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                options={"num_ctx": int(os.getenv("NUM_CTX", "4096"))}
+            result = self.llm.chat(
+                [{"role": "user", "content": prompt}],
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
             )
             
-            answer = response["message"]["content"]
+            answer = result.text.strip()
             
             return {
                 "status": "success",
@@ -52,15 +61,16 @@ Answer:"""
 
 
 responder = Responder(
-    model=os.getenv("MODEL", "llama3.2:8b")
+    model=os.getenv("MODEL", "gpt-4o-mini")
 )
 
 
 @app.get("/health")
 async def health():
     try:
-        ollama.list()
-        return {"status": "healthy", "model": responder.model}
+        if not responder.llm.use_api:
+            raise RuntimeError("LLMClient is not configured for API usage")
+        return {"status": "healthy", "model": responder.llm.chat_model}
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
 
