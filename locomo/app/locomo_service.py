@@ -1,57 +1,14 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Dict, Optional, Any
 import json
-from pathlib import Path
-import os
 import urllib.request
+from pathlib import Path
+from typing import List, Dict, Optional
+import logging
 
-app = FastAPI(title="locomo", version="1.0")
+from app.models import Conversation, DialogTurn, Question
 
-class DialogTurn(BaseModel):
-    speaker: str
-    dia_id: str
-    text: str
-    img_url: Optional[Any] = None
-    blip_caption: Optional[Any] = None
+logger = logging.getLogger(__name__)
 
-class Question(BaseModel):
-    question: str
-    answer: Optional[Any] = None
-    adversarial_answer: Optional[Any] = None
-    category: Optional[Any] = None
-    evidence: Optional[List[str]] = None
-    
-    def get_answer(self) -> str:
-        if self.answer is not None:
-            return str(self.answer)
-        elif self.adversarial_answer is not None:
-            return str(self.adversarial_answer)
-        return ""
-
-class EventSummary(BaseModel):
-    pass
-
-class Conversation(BaseModel):
-    sample_id: str
-    speaker_a: str
-    speaker_b: str
-    sessions: Dict[str, List[DialogTurn]]
-    session_datetimes: Dict[str, str]
-    observations: Optional[Dict[str, Any]] = None
-    session_summaries: Optional[Dict[str, Any]] = None
-    event_summary: Optional[Dict[str, Any]] = None
-    qa: Optional[List[Question]] = None
-
-class ConversationStats(BaseModel):
-    total_conversations: int
-    total_sessions: int
-    total_turns: int
-    total_questions: int
-    conversations_loaded: bool
-    data_file: str
-
-class ChatStorage:
+class LocomoService:
     
     def __init__(self, data_url: str):
         self.data_url = data_url
@@ -63,34 +20,33 @@ class ChatStorage:
         self.is_loaded = False
     
     def download_data(self):
+        """Download data file from URL if it doesn't exist locally."""
         if self.data_path.exists():
-            print(f"Data file already exists at {self.data_path}")
+            logger.info(f"Data file already exists at {self.data_path}")
             return True
         
-        print(f"Downloading data from {self.data_url}")
+        logger.info(f"Downloading data from {self.data_url}")
         
         try:
-
             self.data_path.parent.mkdir(parents=True, exist_ok=True)
-            
             urllib.request.urlretrieve(self.data_url, self.data_path)
-            print(f"Downloaded successfully to {self.data_path}")
+            logger.info(f"Downloaded successfully to {self.data_path}")
             return True
             
         except Exception as e:
-            print(f"Error downloading data: {e}")
+            logger.info(f"Error downloading data: {e}")
             return False
         
     def load_from_json(self):
-
+        """Load and parse conversation data from JSON file."""
         if not self.data_path.exists():
             if not self.download_data():
                 return False
         
-        print(f"Loading conversations from {self.data_path}")
+        logger.info(f"Loading conversations from {self.data_path}")
         
         if not self.data_path.exists():
-            print(f"File not found: {self.data_path}")
+            logger.info(f"File not found: {self.data_path}")
             return False
         
         try:
@@ -98,12 +54,11 @@ class ChatStorage:
                 data = json.load(f)
             
             if not isinstance(data, list):
-                print(f"Expected JSON array, got {type(data)}")
+                logger.info(f"Expected JSON array, got {type(data)}")
                 return False
             
             for conv_idx, conv_data in enumerate(data):
                 try:                    
-
                     conversation_data = conv_data.get("conversation", {})
                     
                     speaker_a = conv_data.get("speaker_a") or conversation_data.get("speaker_a", "")
@@ -116,9 +71,7 @@ class ChatStorage:
                     event_summary = {}
                     
                     for key, value in conversation_data.items():
-
                         if key.startswith("session_"):
-
                             if key.endswith("_date_time") or key.endswith("_observation") or key.endswith("_summary"):
                                 if key.endswith("_date_time"):
                                     session_datetimes[key] = value
@@ -127,14 +80,12 @@ class ChatStorage:
                                         observations[key] = value
                                 elif key.endswith("_summary") and not key.startswith("event"):
                                     session_summaries[key] = value
-
                             elif isinstance(value, list):
                                 sessions[key] = [DialogTurn(**turn) for turn in value]
                         
                         elif key.startswith("events_session_"):
-
                             event_summary[key] = value
-                        
+                    
                     if "observation" in conv_data:
                         obs_data = conv_data["observation"]
                         if isinstance(obs_data, dict):
@@ -194,34 +145,38 @@ class ChatStorage:
                             self.all_questions.append(q_dict)
                     
                 except Exception as e:
-                    print(f"Error parsing conversation: {e}")
+                    logger.info(f"Error parsing conversation: {e}")
                     continue
             
             self.is_loaded = True
-            print(f"Loaded {len(self.conversations)} conversations")
-            print(f"Total sessions: {len(self.all_sessions)}")
-            print(f"Total questions: {len(self.all_questions)}")
+            logger.info(f"Loaded {len(self.conversations)} conversations")
+            logger.info(f"Total sessions: {len(self.all_sessions)}")
+            logger.info(f"Total questions: {len(self.all_questions)}")
             return True
             
         except json.JSONDecodeError as e:
-            print(f"JSON parse error: {e}")
+            logger.info(f"JSON parse error: {e}")
             return False
         except Exception as e:
-            print(f"Error loading data: {e}")
+            logger.info(f"Error loading data: {e}")
             return False
     
     def get_conversation(self, sample_id: str) -> Optional[Conversation]:
+        """Get conversation by sample_id."""
         return self.conversations_by_id.get(sample_id)
     
     def get_conversation_by_index(self, index: int) -> Optional[Conversation]:
+        """Get conversation by index in the list."""
         if 0 <= index < len(self.conversations):
             return self.conversations[index]
         return None
     
     def get_all_conversations(self, skip: int = 0, limit: int = 10) -> List[Conversation]:
+        """Get all conversations with pagination."""
         return self.conversations[skip:skip + limit]
     
     def get_conversation_session_by_id(self, sample_id: str, session_id: str) -> Optional[Dict]:
+        """Get a specific session by conversation sample_id and session_id."""
         conversation = self.get_conversation(sample_id)
         if not conversation:
             return None
@@ -236,6 +191,7 @@ class ChatStorage:
         return None
     
     def get_conversation_session(self, sample_id: str, session_index: int) -> Optional[Dict]:
+        """Get a session by conversation sample_id and session index."""
         conversation = self.get_conversation(sample_id)
         if not conversation:
             return None
@@ -254,6 +210,7 @@ class ChatStorage:
         return None
     
     def get_conversation_session_by_conv_index(self, conv_index: int, session_index: int) -> Optional[Dict]:
+        """Get a session by conversation index and session index."""
         conversation = self.get_conversation_by_index(conv_index)
         if not conversation:
             return None
@@ -261,25 +218,30 @@ class ChatStorage:
         return self.get_conversation_session(conversation.sample_id, session_index)
     
     def get_conversation_questions(self, sample_id: str) -> List[Dict]:
+        """Get all questions for a specific conversation."""
         return [q for q in self.all_questions if q["sample_id"] == sample_id]
     
     def get_conversation_questions_by_index(self, conv_index: int) -> List[Dict]:
+        """Get all questions for a conversation by index."""
         conversation = self.get_conversation_by_index(conv_index)
         if not conversation:
             return []
         return self.get_conversation_questions(conversation.sample_id)
     
     def get_question_by_index(self, index: int) -> Optional[Dict]:
+        """Get a question by its index in all_questions."""
         if 0 <= index < len(self.all_questions):
             return self.all_questions[index]
         return None
     
     def get_sessions(self, sample_id: Optional[str] = None) -> List[Dict]:
+        """Get all sessions, optionally filtered by sample_id."""
         if sample_id:
             return [s for s in self.all_sessions if s["sample_id"] == sample_id]
         return self.all_sessions
     
     def get_questions(self, sample_id: Optional[str] = None, category: Optional[str] = None) -> List[Dict]:
+        """Get questions, optionally filtered by sample_id and/or category."""
         questions = self.all_questions
         
         if sample_id:
@@ -291,6 +253,7 @@ class ChatStorage:
         return questions
     
     def get_stats(self) -> Dict:
+        """Get statistics about loaded data."""
         total_turns = sum(s["num_turns"] for s in self.all_sessions)
         
         return {
@@ -301,167 +264,3 @@ class ChatStorage:
             "conversations_loaded": self.is_loaded,
             "data_file": str(self.data_path)
         }
-
-storage = ChatStorage(
-    data_url=os.getenv("DATA_URL", "https://raw.githubusercontent.com/snap-research/locomo/refs/heads/main/data/locomo10.json")
-)
-
-@app.on_event("startup")
-async def startup_event():
-    print("locomo starting...")
-    
-    storage.load_from_json()
-    
-    if storage.is_loaded:
-        print(f"Ready with {len(storage.conversations)} conversations!")
-    else:
-        print("No data loaded. Check DATA_PATH environment variable.")
-
-@app.get("/", tags=["Info"])
-async def root():
-    return {
-        "service": "locomo",
-        "version": "1.0",
-        "description": "Loads and serves LOCOMO conversation data",
-        "data_format": "locomo10.json format with sessions, qa, observations, summaries",
-        "endpoints": {
-            "GET /conversations": "Get all conversations (paginated)",
-            "GET /conversations/{sample_id}": "Get specific conversation",
-            "GET /conversations/index/{index}": "Get conversation by index",
-            "GET /conversations/{sample_id}/sessions/{session_id}": "Get specific session by session_id",
-            "GET /conversations/index/{conv_index}/sessions/{session_index}": "Get session by conversation and session index",
-            "GET /conversations/{sample_id}/questions": "Get questions for conversation",
-            "GET /conversations/index/{index}/questions": "Get conversation by index and questions",
-            "GET /stats": "Get statistics",
-            "GET /health": "Health check"
-        }
-    }
-
-@app.get("/health", tags=["Info"])
-async def health():
-    return {
-        "status": "healthy" if storage.is_loaded else "not_loaded",
-        "conversations_loaded": storage.is_loaded,
-        "total_conversations": len(storage.conversations),
-        "total_sessions": len(storage.all_sessions),
-        "total_questions": len(storage.all_questions)
-    }
-
-@app.get("/stats", response_model=ConversationStats, tags=["Info"])
-async def get_stats():
-    stats = storage.get_stats()
-    return ConversationStats(**stats)
-
-@app.get("/conversations", tags=["Conversations"])
-async def get_conversations(skip: int = 0, limit: int = 10):
-    if not storage.is_loaded:
-        raise HTTPException(status_code=503, detail="Data not loaded")
-    
-    limit = min(limit, 10)
-    conversations = storage.get_all_conversations(skip, limit)
-    
-    return {
-        "total": len(storage.conversations),
-        "skip": skip,
-        "limit": limit,
-        "count": len(conversations),
-        "conversations": [c.dict() for c in conversations]
-    }
-
-@app.get("/conversations/{sample_id}", tags=["Conversations"])
-async def get_conversation(sample_id: str):
-    if not storage.is_loaded:
-        raise HTTPException(status_code=503, detail="Data not loaded")
-    
-    conversation = storage.get_conversation(sample_id)
-    
-    if conversation is None:
-        raise HTTPException(status_code=404, detail=f"Conversation {sample_id} not found")
-    
-    return {
-        "sample_id": conversation.sample_id,
-        "speaker_a": conversation.speaker_a,
-        "speaker_b": conversation.speaker_b,
-        "sessions": conversation.sessions,
-        "session_datetimes": conversation.session_datetimes
-    }
-
-@app.get("/conversations/index/{index}", tags=["Conversations"])
-async def get_conversation_by_index(index: int):
-    if not storage.is_loaded:
-        raise HTTPException(status_code=503, detail="Data not loaded")
-    
-    conversation = storage.get_conversation_by_index(index)
-    
-    if conversation is None:
-        raise HTTPException(status_code=404, detail=f"Conversation at index {index} not found")
-    
-    return {
-        "sample_id": conversation.sample_id,
-        "speaker_a": conversation.speaker_a,
-        "speaker_b": conversation.speaker_b,
-        "sessions": conversation.sessions,
-        "session_datetimes": conversation.session_datetimes
-    }
-
-@app.get("/conversations/{sample_id}/sessions/{session_id}", tags=["Conversations"])
-async def get_conversation_session_by_id(sample_id: str, session_id: str):
-    if not storage.is_loaded:
-        raise HTTPException(status_code=503, detail="Data not loaded")
-    
-    session = storage.get_conversation_session_by_id(sample_id, session_id)
-    
-    if session is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Session {session_id} not found in conversation {sample_id}"
-        )
-    
-    return session
-
-@app.get("/conversations/index/{conv_index}/sessions/{session_index}", tags=["Conversations"])
-async def get_conversation_session_by_index(conv_index: int, session_index: int):
-    if not storage.is_loaded:
-        raise HTTPException(status_code=503, detail="Data not loaded")
-    
-    session = storage.get_conversation_session_by_conv_index(conv_index, session_index)
-    
-    if session is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Session {session_index} not found in conversation {conv_index}"
-        )
-    
-    return session
-
-@app.get("/conversations/{sample_id}/questions", tags=["Questions"])
-async def get_questions_for_conversation(sample_id: str):
-    if not storage.is_loaded:
-        raise HTTPException(status_code=503, detail="Data not loaded")
-    
-    questions = storage.get_questions(sample_id)
-    
-    return {
-        "sample_id": sample_id,
-        "total_questions": len(questions),
-        "questions": questions
-    }
-
-@app.get("/conversations/index/{index}/questions", tags=["Questions"])
-async def get_questions_by_conversation_index(index: int):
-    if not storage.is_loaded:
-        raise HTTPException(status_code=503, detail="Data not loaded")
-    
-    conversation = storage.get_conversation_by_index(index)
-    
-    if conversation is None:
-        raise HTTPException(status_code=404, detail=f"Conversation at index {index} not found")
-    
-    questions = storage.get_questions(conversation.sample_id)
-    
-    return {
-        "conversation_index": index,
-        "sample_id": conversation.sample_id,
-        "total_questions": len(questions),
-        "questions": questions
-    }

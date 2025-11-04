@@ -1,0 +1,25 @@
+# Python virtual environment
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Memory checkpoints
+.checkpoints/
+
+# Environment files
+.env
+
+# Evaluation results
+dmas_evaluation_*.json
+dmas_evaluation_*.csv
+dmas_conversations_*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python

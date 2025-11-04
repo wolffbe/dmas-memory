@@ -1,16 +1,16 @@
 FROM python:3.11-slim
 
-WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY memory.py .
+COPY main.py .
+COPY app/ ./app/
 
-EXPOSE 8005
+EXPOSE 8002
 
-CMD ["python", "memory.py"]
+CMD ["python", "main.py"]
