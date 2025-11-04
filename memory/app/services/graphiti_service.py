@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from graphiti_core import Graphiti
@@ -19,14 +20,23 @@ class GraphitiService:
             raise ValueError("NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD must be set")
         
         self.graphiti = Graphiti(neo4j_uri, neo4j_user, neo4j_password)
+        self._initialized = False
         
-        try:
-            self.graphiti.build_indices_and_constraints()
-            logger.info("Graphiti indices initialized")
-        except Exception as e:
-            logger.exception("Failed to initialize Graphiti indices: %s", e)
+    async def _initialize(self):        
+        if not self._initialized:
+            try:
+                logger.info("Starting build_indices_and_constraints...")
+                await self.graphiti.build_indices_and_constraints()
+                self._initialized = True
+                logger.info("Graphiti indices initialized successfully")
+            except Exception as e:
+                logger.exception("Failed to initialize Graphiti indices: %s", e)
+        else:
+            logger.info("Already initialized, skipping")
     
-    def memorize_conversation(self, conv_index: int, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def memorize_conversation_async(self, conv_index: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        await self._initialize()
+        
         sessions = data.get("sessions") or {}
         session_datetimes = data.get("session_datetimes") or {}
         
@@ -74,7 +84,9 @@ class GraphitiService:
                 speaker = norm_str(turn.get("speaker")).lower() or None
                 blip_caption = norm_str(turn.get("blip_caption"))
                 
-                episode_content = f"[{speaker} at {timestamp}]: {text}"
+                reference_time = timestamp if timestamp else datetime.now()
+                
+                episode_content = f"[{speaker} at {reference_time.isoformat()}]: {text}"
                 if blip_caption:
                     episode_content += f" (Image: {blip_caption})"
                 
@@ -85,12 +97,12 @@ class GraphitiService:
                             session_key, session_idx, total_sessions, 
                             turn_idx, total_turns, speaker or "unknown")
                     
-                    result = self.graphiti.add_episode(
+                    result = await self.graphiti.add_episode(
                         name=episode_name,
                         episode_body=episode_content,
                         source=EpisodeType.text,
                         source_description=f"Speaker: {speaker}",
-                        reference_time=timestamp,
+                        reference_time=reference_time,
                     )
                     
                     episode_results.append({
@@ -99,7 +111,7 @@ class GraphitiService:
                         "turn_index": turn_idx - 1,
                         "text_snippet": text[:100],
                         "speaker": speaker,
-                        "timestamp": timestamp,
+                        "timestamp": reference_time.isoformat(),
                         "episode_name": episode_name,
                         "episode_result": result,
                     })
@@ -139,17 +151,24 @@ class GraphitiService:
             "results": episode_results,
         }
         
-        logger.info("memorize_conversation summary: %s", summary)
         return summary
     
-    def remember(
-        self,
-        question: str
-    ) -> List[str]:        
+    def memorize_conversation(self, conv_index: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(self.memorize_conversation_async(conv_index, data))
+    
+    async def remember_async(self, question: str) -> List[str]:
+        await self._initialize()
+        
         try:
             config = NODE_HYBRID_SEARCH_RRF.model_copy(deep=True)
             
-            results = self.graphiti._search(query=question, config=config)
+            results = await self.graphiti._search(query=question, config=config)
             
             memories: List[str] = []
             for node in results.nodes:
@@ -162,3 +181,12 @@ class GraphitiService:
         except Exception as e:
             logger.exception("Graphiti search failed: %s", e)
             return []
+    
+    def remember(self, question: str) -> List[str]:
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(self.remember_async(question))

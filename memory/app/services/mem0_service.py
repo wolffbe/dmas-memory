@@ -41,10 +41,11 @@ class Mem0Service:
             
             raw_ts = session_datetimes.get(f"{session_key}_date_time")
             timestamp = parse_timestamp(raw_ts)
+            timestamp_str = timestamp.isoformat() if timestamp else None
             total_turns = len(turns)
             
             logger.info("Processing session %d/%d: %s with %d turns, timestamp=%s", 
-                    session_idx, total_sessions, session_key, total_turns, timestamp)
+                    session_idx, total_sessions, session_key, total_turns, timestamp_str)
             
             for turn_idx, turn in enumerate(turns, 1):
                 if not isinstance(turn, dict):
@@ -63,14 +64,14 @@ class Mem0Service:
                 speaker = norm_str(turn.get("speaker")).lower() or None
                 blip_caption = norm_str(turn.get("blip_caption"))
                 
-                line = f"{timestamp}: {text}" if timestamp else text
+                line = f"{timestamp_str}: {text}" if timestamp_str else text
                 if blip_caption:
                     line += f" (Image: {blip_caption})"
                 
                 metadata = {
                     "conversation_id": conv_index,
                     "session": session_key,
-                    "timestamp": timestamp,
+                    "timestamp": timestamp_str,
                     "turn_index": turn_idx - 1,
                     "speaker": speaker,
                 }
@@ -88,7 +89,7 @@ class Mem0Service:
                         "turn_index": turn_idx - 1,
                         "text_snippet": text[:100],
                         "speaker": speaker,
-                        "timestamp": timestamp,
+                        "timestamp": timestamp_str,
                         "memory_result": result,
                     })
                     
@@ -134,7 +135,9 @@ class Mem0Service:
         question: str
     ) -> List[str]:
         
-        name = extract_name(question).lower()
+        name = extract_name(question)
+        if name:
+            name = name.lower()
         logger.info("Extracted name: '%s'", name)
                 
         search_results = self.memory.search(question, user_id=name)
