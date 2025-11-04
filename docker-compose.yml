@@ -1,5 +1,4 @@
 name: dmas-long-context-memory
-
 services:
   locomo:
     build:
@@ -20,16 +19,7 @@ services:
           memory: 512M
         reservations:
           memory: 256M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    profiles:
-      - mem0
-      - graphiti
-
+    restart: unless-stopped
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
@@ -46,25 +36,7 @@ services:
           memory: 1G
         reservations:
           memory: 512M
-    healthcheck:
-      # test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      # Uses bash and /dev/tcp since curl/wget are not available for security reasons
-      # See: https://github.com/qdrant/qdrant/issues/4250
-      test:
-        [
-          "CMD",
-          "bash",
-          "-c",
-          "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     restart: unless-stopped
-    profiles:
-      - mem0
-
   neo4j:
     image: neo4j:5.15
     container_name: neo4j
@@ -75,8 +47,8 @@ services:
       - NEO4J_AUTH=neo4j/password
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
-      - NEO4J_dbms_memory_heap_max__size=1536M
-      - NEO4J_dbms_memory_pagecache_size=768M
+      - NEO4J_dbms_memory_heap_max__size=512M
+      - NEO4J_dbms_memory_pagecache_size=256M
     volumes:
       - neo4j-data:/data
       - neo4j-logs:/logs
@@ -85,53 +57,29 @@ services:
     deploy:
       resources:
         limits:
-          memory: 3G
+          memory: 1G
         reservations:
-          memory: 1536M
-    healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
+          memory: 512M
     restart: unless-stopped
-    profiles:
-      - graphiti
-
   memory:
     build:
-      context: .
-      dockerfile: memory/Dockerfile
+      context: ./memory
+      dockerfile: Dockerfile
     container_name: memory
     ports:
-      - "8005:8005"
+      - "8005:8002"
     depends_on:
-      qdrant:
-        condition: service_healthy
-        required: false
-      neo4j:
-        condition: service_healthy
-        required: false
+      - qdrant
+      - neo4j
     environment:
       - MEMORY_BACKEND=${MEMORY_BACKEND:-mem0}
-      - USE_API=true
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - API_BASE_URL=${API_BASE_URL:-https://api.openai.com/v1}
-      - MODEL=${MEMORY_MODEL:-gpt-4o-mini}
-      - EMBED_MODEL=${EMBED_MODEL:-text-embedding-3-small}
-      - EMBEDDING_DIMS=${EMBEDDING_DIMS:-1536}
-      - MEMORY_LLM_MODEL=${MEMORY_LLM_MODEL:-gpt-4o-mini}
-      - MEMORY_LLM_TEMPERATURE=${MEMORY_LLM_TEMPERATURE:-0.0}
-      - MEMORY_LLM_MAX_TOKENS=${MEMORY_LLM_MAX_TOKENS:-2000}
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - QDRANT_COLLECTION=conversations
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=password
-      - DMAS_AGENT=memory
-      - DMAS_RUN_ID=${DMAS_RUN_ID:-local-dev}
-    # No volumes needed - memory state is in Qdrant/Neo4j
+      - GRAPHITI_TELEMETRY_ENABLED=false
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     networks:
       - memory-internal
       - dmas-network
@@ -141,104 +89,108 @@ services:
           memory: 512M
         reservations:
           memory: 256M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
     restart: unless-stopped
-    profiles:
-      - mem0
-      - graphiti
-
-  coordinator:
+  responder:
     build:
-      context: .
-      dockerfile: coordinator/Dockerfile
-    container_name: coordinator
+      context: ./responder
+      dockerfile: Dockerfile
+    container_name: responder
     ports:
-      - "8003:8001"
-    depends_on:
-      locomo:
-        condition: service_healthy
-      memory:
-        condition: service_healthy
-      responder:
-        condition: service_healthy
+      - "8006:8003"
     environment:
-      - API_URL=http://locomo:8000
-      - MEMORY_URL=http://memory:8005
-      - RESPONDER_URL=http://responder:8006
-      - USE_API=true
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - API_BASE_URL=${API_BASE_URL:-https://api.openai.com/v1}
-      - MODEL=${COORDINATOR_MODEL:-gpt-4o-mini}
-      - DMAS_AGENT=coordinator
-      - DMAS_RUN_ID=${DMAS_RUN_ID:-local-dev}
+      - MODEL=${MODEL:-gpt-4o}
     networks:
       - dmas-network
     deploy:
       resources:
         limits:
-          memory: 3G
+          memory: 512M
         reservations:
-          memory: 2G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+          memory: 256M
     restart: unless-stopped
-    profiles:
-      - mem0
-      - graphiti
-
-  responder:
-    build:
-      context: .
-      dockerfile: responder/Dockerfile
-    container_name: responder
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
     ports:
-      - "8006:8006"
-    environment:
-      - USE_API=true
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - API_BASE_URL=${API_BASE_URL:-https://api.openai.com/v1}
-      - MODEL=${RESPONDER_MODEL:-gpt-4o-mini}
-      - MAX_COMPLETION_TOKENS=${RESPONDER_MAX_TOKENS:-512}
-      - TEMPERATURE=${RESPONDER_TEMPERATURE:-0.0}
-      - DMAS_AGENT=responder
-      - DMAS_RUN_ID=${DMAS_RUN_ID:-local-dev}
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        ollama serve &
+        OLLAMA_PID=$!
+        
+        echo "Waiting for Ollama server to start..."
+        sleep 10
+        until ollama list > /dev/null 2>&1; do
+          echo "Still waiting for Ollama..."
+          sleep 2
+        done
+        
+        echo "Ollama server is ready, pulling model..."
+        ollama pull ${OLLAMA_MODEL}
+        
+        echo "Model pulled successfully"
+        wait $OLLAMA_PID
     networks:
       - dmas-network
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q '${OLLAMA_MODEL}'"]
+      interval: 5s
+      timeout: 5s
+      retries: 120
+      start_period: 180s
     deploy:
       resources:
         limits:
           memory: 8G
         reservations:
-          memory: 6G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+          memory: 4G
     restart: unless-stopped
-    profiles:
-      - mem0
-      - graphiti
-
+  coordinator:
+    build:
+      context: ./coordinator
+      dockerfile: Dockerfile
+    container_name: coordinator
+    ports:
+      - "8003:8001"
+    depends_on:
+      locomo:
+        condition: service_started
+      memory:
+        condition: service_started
+      responder:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    environment:
+      - LOCOMO_URL=http://locomo:8000
+      - MEMORY_URL=http://memory:8002
+      - RESPONDER_URL=http://responder:8003
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    networks:
+      - dmas-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
 volumes:
   locomo-data:
   qdrant-data:
   neo4j-data:
   neo4j-logs:
-
+  ollama_data:
 networks:
-  memory-internal:
-    driver: bridge
-    internal: false
   dmas-network:
+    driver: bridge
+  memory-internal:
     driver: bridge

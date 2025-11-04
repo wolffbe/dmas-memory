@@ -5,17 +5,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY coordinator/requirements.txt ./requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY dmas_llm /app/dmas_llm
-COPY coordinator/coordinator.py /app/coordinator.py
+COPY main.py .
+COPY app/ ./app/
 
 EXPOSE 8001
 
-CMD ["python", "coordinator.py"]
+CMD ["python", "main.py"]
