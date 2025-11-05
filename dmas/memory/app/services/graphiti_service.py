@@ -1,14 +1,17 @@
 import os
 import logging
 import asyncio
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timezone
+from openai import OpenAI
+from typing import Dict, Any, List
+from datetime import datetime
 from graphiti_core import Graphiti
 from graphiti_core.nodes import EpisodeType
 from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
 from app.utils import norm_str, extract_name, parse_timestamp
 
 logger = logging.getLogger(__name__)
+
+openai_client = OpenAI(base_url=os.getenv("OPENAI_BASE_URL"))
 
 class GraphitiService:
     def __init__(self):

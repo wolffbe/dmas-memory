@@ -1,0 +1,2 @@
+memory,time,conversation_index,session_id,cpu_edge_ns,cpu_cloud_ns,ram_edge_bytes,ram_cloud_bytes,disk_edge_bytes,disk_cloud_bytes,network_edge_bytes,network_cloud_bytes,openai_tokens,openai_cost_usd,api_latency_s,metric_window_s,toxic_latency,toxic_bandwidth,toxic_slow_close,toxic_timeout,toxic_slicer,toxic_limit_data,toxic_reset_peer
+mem0,1762408298.4426012,0,1,23567286197.85421,68285182122.26359,5836769171.613703,42848233424.08567,0.0,38131612.58985074,12207.063532446322,6373919.278455791,43719,0.0052605,74.12601828575134,74,0,0,0,0,0,0,0

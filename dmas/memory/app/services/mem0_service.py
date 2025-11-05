@@ -8,7 +8,7 @@ from app.utils import norm_str, extract_name, parse_timestamp
 
 logger = logging.getLogger(__name__)
 
-openai_client = OpenAI()
+openai_client = OpenAI(base_url=os.getenv("OPENAI_BASE_URL"))
 
 class Mem0Service:
         

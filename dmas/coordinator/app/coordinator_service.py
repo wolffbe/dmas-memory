@@ -22,7 +22,7 @@ class CoordinatorService:
         self.ollama_model = ollama_model
         self.memory = None
         
-        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL")
         
         self.client = OpenAI(
             base_url=ollama_base_url,
@@ -254,7 +254,9 @@ class CoordinatorService:
                         
                         for tool_call in assistant_message.tool_calls:
                             tool_name = tool_call.function.name
-                            tool_args = json.loads(tool_call.function.arguments)
+                            tool_args = tool_call.function.arguments
+                            if isinstance(tool_args, str):
+                                tool_args = json.loads(tool_args)
                             
                             logger.info(f"Calling tool: {tool_name} with args: {tool_args}")
                             

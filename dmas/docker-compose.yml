@@ -33,10 +33,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
         reservations:
-          memory: 512M
+          memory: 1G
     restart: unless-stopped
+    labels:
+      - "group=cloud"
   neo4j:
     image: neo4j:5.26
     container_name: neo4j
@@ -61,6 +63,8 @@ services:
         reservations:
           memory: 1G
     restart: unless-stopped
+    labels:
+      - "group=cloud"
   memory:
     build:
       context: ./memory
@@ -71,11 +75,10 @@ services:
     depends_on:
       - qdrant
       - neo4j
-    env_file:
-      - .env
     environment:
       - MEMORY_BACKEND=${MEMORY_BACKEND}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=password
@@ -92,6 +95,8 @@ services:
         reservations:
           memory: 256M
     restart: unless-stopped
+    labels:
+      - "group=cloud"
   responder:
     build:
       context: ./responder
@@ -102,6 +107,7 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MODEL=${MODEL:-gpt-4o}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
     networks:
       - dmas-network
     deploy:
@@ -111,6 +117,8 @@ services:
         reservations:
           memory: 256M
     restart: unless-stopped
+    labels:
+      - "group=cloud"
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -122,7 +130,7 @@ services:
     command:
       - |
         ollama serve &
-        OLLAMA_PID=$!
+        OLLAMA_PID=$$!
         
         echo "Waiting for Ollama server to start..."
         sleep 10
@@ -135,7 +143,7 @@ services:
         ollama pull ${OLLAMA_MODEL}
         
         echo "Model pulled successfully"
-        wait $OLLAMA_PID
+        wait $$OLLAMA_PID
     networks:
       - dmas-network
     environment:
@@ -149,10 +157,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 10G
+          memory: 12G
         reservations:
-          memory: 5G
+          memory: 6G
     restart: unless-stopped
+    labels:
+      - "group=edge"
   coordinator:
     build:
       context: ./coordinator
@@ -173,26 +183,36 @@ services:
       - LOCOMO_URL=http://locomo:8000
       - MEMORY_URL=http://memory:8002
       - RESPONDER_URL=http://responder:8003
-      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
     networks:
       - dmas-network
     deploy:
       resources:
         limits:
-          memory: 2G
-        reservations:
           memory: 1G
+        reservations:
+          memory: 512M
     restart: unless-stopped
+    labels:
+      - "group=edge"
 volumes:
   locomo-data:
   qdrant-data:
+    labels:
+      group: cloud
   neo4j-data:
+    labels:
+      group: cloud
   neo4j-logs:
+    labels:
+      group: cloud
   ollama_data:
+    labels:
+      group: edge
 networks:
   dmas-network:
     driver: bridge
+    name: dmas-network
   memory-internal:
     driver: bridge
