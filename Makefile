@@ -61,9 +61,9 @@ up: set-docker-gid
 	@echo Starting services on $(DETECTED_OS)...
 	@echo Docker GID: $(DOCKER_GID)
 	docker network rm dmas-network 2>/dev/null || echo ""
-	cd proxy && docker-compose --env-file ../.env up -d
-	cd dmas && docker-compose --env-file ../.env up -d
-	cd monitoring && docker-compose --env-file ../.env up -d
+	cd proxy && docker-compose --env-file ../.env up -d --build --force-recreate
+	cd dmas && docker-compose --env-file ../.env up -d --build --force-recreate
+	cd monitoring && docker-compose --env-file ../.env up -d --build --force-recreate
 	@echo All services started!
 
 reset:
