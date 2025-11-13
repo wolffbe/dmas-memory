@@ -67,7 +67,7 @@ up: set-docker-gid
 	@echo All services started!
 
 reset:
-	@echo Resetting everything (keeping ollama volume)...
+	@echo "Resetting everything (keeping ollama volume)..."
 	cd proxy && docker-compose --env-file ../.env down -v || echo ""
 	cd dmas && docker-compose --env-file ../.env down || echo ""
 	cd monitoring && docker-compose --env-file ../.env down -v || echo ""

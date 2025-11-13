@@ -177,7 +177,33 @@ class GraphitiService:
             for node in results.nodes:
                 summary = (node.summary or "").strip()
                 if summary:
-                    memories.append(summary)
+                    # Try to extract temporal metadata from the node
+                    timestamp = None
+                    
+                    # Check for various temporal attributes
+                    if hasattr(node, 'created_at') and node.created_at:
+                        timestamp = node.created_at
+                    elif hasattr(node, 'valid_at') and node.valid_at:
+                        timestamp = node.valid_at
+                    
+                    # Format memory with timestamp if available
+                    if timestamp:
+                        # Convert timestamp to date string
+                        try:
+                            if isinstance(timestamp, str):
+                                from dateutil import parser
+                                dt = parser.parse(timestamp)
+                            else:
+                                dt = timestamp
+                            date_str = dt.strftime("%Y-%m-%d")
+                            formatted_memory = f"[{date_str}] {summary}"
+                        except Exception as e:
+                            logger.debug("Could not parse timestamp: %s", e)
+                            formatted_memory = summary
+                    else:
+                        formatted_memory = summary
+                    
+                    memories.append(formatted_memory)
             
             return memories
             

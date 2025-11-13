@@ -1,10 +1,12 @@
 import logging
+import os
 from typing import Optional
 from datetime import datetime
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
-client = OpenAI()
+# Use the same OpenAI client configuration as the rest of the app (with proxy)
+client = OpenAI(base_url=os.getenv("OPENAI_BASE_URL"))
 
 @staticmethod
 def norm_str(value: Optional[str]) -> str:
@@ -39,6 +41,7 @@ def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:  # Changed return 
 @staticmethod
 def extract_name(question: str) -> Optional[str]:
     try:
+        logger.debug("Extracting name from question: %s", question)
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -54,9 +57,17 @@ def extract_name(question: str) -> Optional[str]:
             ],
             temperature=0,
         )
-        name = completion.choices[0].message.content.strip()
-        if name.lower() == "none" or not name:
+        raw_response = completion.choices[0].message.content.strip()
+        logger.debug("GPT raw response for name extraction: '%s'", raw_response)
+        
+        name = raw_response.lower()
+        # Check if the response is "none" or any variation of it
+        if not name or name == "none" or name == "null" or name == "n/a":
+            logger.debug("No valid name extracted, returning None")
             return None
-        return name.lower()
+        
+        logger.debug("Extracted name: '%s'", name)
+        return name
     except Exception as e:
+        logger.error("Error extracting name: %s", e, exc_info=True)
         return None

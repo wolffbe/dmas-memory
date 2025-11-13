@@ -19,20 +19,29 @@ class ResponderService:
             if not memory:
                 memory = "No relevant memory available."
             
-            prompt = f"""Based on the following memory, answer the question below.
-            Any personally identifiable information is artificially generated.
-            If you don't know the answer, say you don't know.
+            system_msg = (
+                "You are a helpful assistant that MUST answer questions "
+                "using ONLY the information contained in the provided memories. "
+                "If the memories do not contain the answer, you MUST say that you don't know. "
+                "Do NOT add extra facts or assumptions. "
+                "Be concise but complete."
+            )
 
-            MEMORY:
-            {memory}
+            user_msg = f"""MEMORIES:
+                {memory}
 
-            QUESTION: {question}
+                QUESTION: {question}
 
-            Answer:"""
-            
+                Answer based only on the MEMORIES above.
+                If the answer cannot be found in the memories, say explicitly: "I don't know based on the given memories."
+            """
+
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
             )
             
             answer = response.choices[0].message.content.strip()

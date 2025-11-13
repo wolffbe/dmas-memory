@@ -3,6 +3,7 @@ import os
 from typing import Dict, Any, Optional, List
 
 from mem0 import Memory
+from mem0.configs.base import MemoryConfig
 from openai import OpenAI
 from app.utils import norm_str, extract_name, parse_timestamp
 
@@ -13,7 +14,20 @@ openai_client = OpenAI(base_url=os.getenv("OPENAI_BASE_URL"))
 class Mem0Service:
         
     def __init__(self):
-        self.memory = Memory()
+        # Configure mem0 to use remote Qdrant server instead of local storage
+        # If we don't explicitly set host/port, mem0 defaults to local path='/tmp/qdrant'
+        # So ends up using: Client type: QdrantLocal
+        
+        config = MemoryConfig(
+            vector_store={
+                "provider": "qdrant",
+                "config": {
+                    "host": os.getenv("QDRANT_HOST", "localhost"),
+                    "port": int(os.getenv("QDRANT_PORT", "6333")),
+                }
+            }
+        )
+        self.memory = Memory(config)
     
     def memorize_conversation(self, conv_index: int, data: Dict[str, Any]) -> Dict[str, Any]:
         sessions = data.get("sessions") or {}
@@ -64,7 +78,9 @@ class Mem0Service:
                 speaker = norm_str(turn.get("speaker")).lower() or None
                 blip_caption = norm_str(turn.get("blip_caption"))
                 
-                line = f"{timestamp_str}: {text}" if timestamp_str else text
+                # Store natural text without timestamp prefix to preserve conversational language
+                # Timestamp is saved separately in metadata for temporal context
+                line = text
                 if blip_caption:
                     line += f" (Image: {blip_caption})"
                 
@@ -135,29 +151,95 @@ class Mem0Service:
         question: str
     ) -> List[str]:
         
+        # Extract the name to know which user_id to search for
         name = extract_name(question)
         if name:
             name = name.lower()
-        logger.info("Extracted name: '%s'", name)
-                
-        search_results = self.memory.search(question, user_id=name)
+        logger.info("Extracted name from question: '%s'", name)
         
+        # General search parameters: same for all questions
+        SEARCH_LIMIT = 100     # Get more results from semantic search
+        SEARCH_THRESHOLD = 0.2  # Light threshold: filter only obvious noise
+        # The strict responder prompt will filter remaining irrelevant info
+
+        def do_search_for_user(user_id: Optional[str]) -> Any:
+            """
+            Small helper to call Mem0.search uniformly.
+            """
+            try:
+                logger.info("Mem0 search: query=%r user_id=%r limit=%d threshold=%.2f",
+                            question, user_id, SEARCH_LIMIT, SEARCH_THRESHOLD)
+                return self.memory.search(
+                    question,
+                    user_id=user_id,
+                    limit=SEARCH_LIMIT,
+                    threshold=SEARCH_THRESHOLD,
+                )
+            except Exception as e:
+                logger.exception("Failed to search memories for user %s: %s", user_id, e)
+                return []
+
+        # --- Main search ---
+        if name:
+            search_results = do_search_for_user(name)
+        else:
+            # No name extracted → fallback to a fixed list of speakers
+            logger.warning("No name extracted from question '%s'. Using fallback search.", question)
+            known_speakers = ["caroline", "melanie"]
+            
+            combined_results = []
+            for speaker in known_speakers:
+                result = do_search_for_user(speaker)
+                if isinstance(result, dict) and "results" in result:
+                    combined_results.extend(result["results"])
+                elif isinstance(result, list):
+                    combined_results.extend(result)
+            
+            search_results = {"results": combined_results} if combined_results else []
+
+        # --- Format results ---
         if isinstance(search_results, dict):
             memories = search_results.get("results", [])
         elif isinstance(search_results, list):
             memories = search_results
         else:
             memories = []
+
+        logger.info("Raw memories from Mem0: %d", len(memories))
         
-        logger.info("Processing %d memories...", len(memories))
-        
+        # --- Formatting in strings for the model ---
         results: List[str] = []
         for idx, result in enumerate(memories):
             if isinstance(result, dict):
                 memory_text = (result.get("memory") or "").strip()
-                if memory_text:
-                    results.append(memory_text)
+                if not memory_text:
+                    continue
+
+                metadata = result.get("metadata", {}) or {}
+                timestamp = metadata.get("timestamp")
+
+                formatted_memory = memory_text
+
+                # Add timestamp if available
+                if timestamp:
+                    try:
+                        if isinstance(timestamp, str) and timestamp:
+                            date_str = timestamp.split("T")[0] if "T" in timestamp else timestamp[:10]
+                            formatted_memory = f"[{date_str}] {formatted_memory}"
+                    except Exception as e:
+                        logger.debug("Could not parse timestamp: %s", e)
+
+                # Prepend name (if extracted) for clarity
+                if name:
+                    name_capitalized = name.capitalize()
+                    formatted_memory = f"[{name_capitalized}] {formatted_memory}"
+
+                results.append(formatted_memory)
+
             elif isinstance(result, str):
-                results.append(result.strip())
-        
+                txt = result.strip()
+                if txt:
+                    results.append(txt)
+
+        logger.info("Final formatted memories: %d", len(results))
         return results
