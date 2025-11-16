@@ -60,10 +60,11 @@ endif
 up: set-docker-gid
 	@echo Starting services on $(DETECTED_OS)...
 	@echo Docker GID: $(DOCKER_GID)
-	docker network rm dmas-network 2>/dev/null || echo ""
-	cd proxy && docker-compose --env-file ../.env up -d --build --force-recreate
-	cd dmas && docker-compose --env-file ../.env up -d --build --force-recreate
-	cd monitoring && docker-compose --env-file ../.env up -d --build --force-recreate
+	@echo MEMORY_BACKEND: $(shell grep MEMORY_BACKEND .env | cut -d= -f2)
+	docker network create dmas-network 2>/dev/null || echo "Network exists"
+	cd proxy && docker-compose --env-file ../.env up -d --remove-orphans
+	cd dmas && docker-compose --env-file ../.env up -d --remove-orphans
+	cd monitoring && docker-compose --env-file ../.env up -d --remove-orphans
 	@echo All services started!
 
 reset:

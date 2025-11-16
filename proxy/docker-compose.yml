@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: openai-proxy
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes:
       - ./logs/openai:/app/logs
     restart: unless-stopped
@@ -24,7 +24,7 @@ services:
       dockerfile: Dockerfile
     container_name: ollama-proxy
     ports:
-      - "8004:8003"
+      - "127.0.0.1:8004:8003"
     volumes:
       - ./logs/ollama:/app/logs
     environment:
@@ -41,5 +41,4 @@ services:
 
 networks:
   dmas-network:
-    driver: bridge
-    name: dmas-network
+    external: true
