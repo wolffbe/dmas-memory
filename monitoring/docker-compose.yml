@@ -1,13 +1,22 @@
 services:
+  docker-proxy:
+    image: alpine/socat
+    container_name: docker-proxy
+    command: TCP-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:2375:2375"
+    networks:
+      - dmas-network
+    restart: unless-stopped
   telegraf:
     image: telegraf:latest
     container_name: telegraf
-    user: root
-    group_add:
-      - "${DOCKER_GROUP_ID:-984}"
+    depends_on:
+      - docker-proxy
     volumes:
       - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "127.0.0.1:9273:9273"
     networks:
