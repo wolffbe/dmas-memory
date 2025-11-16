@@ -47,26 +47,6 @@ class ResponderService:
                 "I don't know based on the given memories."
             """
 
-            # old prompt for reference
-            # system_msg = (
-            #     "You are a helpful assistant that MUST answer questions "
-            #     "using ONLY the information contained in the provided memories. "
-            #     "If the memories do not contain the answer, you MUST say that you don't know. "
-            #     "Do NOT add extra facts or assumptions. "
-            #     "Be concise but complete."
-            # )
-
-            # user_msg = f"""MEMORIES:
-            #     {memory}
-
-            #     QUESTION: {question}
-
-            #     Answer based only on the MEMORIES above.
-            #     Use timestamps in the context to provide absolute dates when answering temporal questions.
-            #     If the answer cannot be found in the memories, say explicitly: "I don't know based on the given memories.
-            # """
-
-
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[

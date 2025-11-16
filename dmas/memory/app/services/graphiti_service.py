@@ -8,7 +8,7 @@ from dateutil import parser
 from graphiti_core import Graphiti
 from graphiti_core.nodes import EpisodeType
 from graphiti_core.search.search_config_recipes import COMBINED_HYBRID_SEARCH_RRF
-from app.utils import norm_str, extract_name, parse_timestamp
+from app.utils import norm_str, parse_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +20,12 @@ class GraphitiService:
         neo4j_user = os.getenv("NEO4J_USER", "neo4j")
         neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
         
-        self.SEARCH_LIMIT = int(os.getenv("GRAPHITI_SEARCH_LIMIT", "100"))
-        self.MAX_EPISODIC = int(os.getenv("GRAPHITI_MAX_EPISODIC", "8"))
-        self.MAX_ENTITIES = int(os.getenv("GRAPHITI_MAX_ENTITIES", "4"))
-        self.USE_ENTITIES = os.getenv("GRAPHITI_USE_ENTITIES", "true").lower() == "true"
+        self.SEARCH_LIMIT = int(os.getenv("MEMORIES_SEARCH_LIMIT", "100"))
         self.MAX_CONTEXT_MEMORIES = int(os.getenv("MAX_CONTEXT_MEMORIES", "12"))
-        
+        self.SEMANTIC_SEARCH_RATIO = float(os.getenv("GRAPHITI_SEMANTIC_SEARCH_RATIO", "0.33"))
+        self.MAX_EPISODIC = int(self.MAX_CONTEXT_MEMORIES * (1 - self.SEMANTIC_SEARCH_RATIO))
+        self.MAX_ENTITIES = self.MAX_CONTEXT_MEMORIES - self.MAX_EPISODIC
+
         if not (neo4j_uri and neo4j_user and neo4j_password):
             raise ValueError("NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD must be set")
         

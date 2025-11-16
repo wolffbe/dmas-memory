@@ -9,6 +9,7 @@ services:
       - "127.0.0.1:8474:8474"
       - "127.0.0.1:8005:18005" # listen to Memory
       - "127.0.0.1:8006:18006" # listen to Responder
+      - "127.0.0.1:8007:18007" # Listen to Locomo
     command: ["-host=0.0.0.0"]
     restart: unless-stopped
     labels:
@@ -19,10 +20,7 @@ services:
       context: ./locomo
       dockerfile: Dockerfile
     container_name: locomo
-    ports:
-      - "127.0.0.1:8002:8000"
-    volumes:
-      - locomo-data:/data
+    # Port exposed only via toxiproxy (host 8004 -> toxiproxy 18004 -> locomo 8000)
     environment:
       - DATA_URL=https://raw.githubusercontent.com/snap-research/locomo/refs/heads/main/data/locomo10.json
     networks:
@@ -194,7 +192,7 @@ services:
       toxiproxy:
         condition: service_started
     environment:
-      - LOCOMO_URL=http://locomo:8000
+      - LOCOMO_URL=http://toxiproxy:18007
       - MEMORY_URL=http://toxiproxy:18005
       - RESPONDER_URL=http://toxiproxy:18006
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
@@ -211,7 +209,6 @@ services:
     labels:
       - "group=edge"
 volumes:
-  locomo-data:
   qdrant-data:
     labels:
       group: cloud

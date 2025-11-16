@@ -72,7 +72,6 @@ reset:
 	cd proxy && docker-compose --env-file ../.env down -v || echo ""
 	cd dmas && docker-compose --env-file ../.env down || echo ""
 	cd monitoring && docker-compose --env-file ../.env down -v || echo ""
-	docker volume rm dmas-long-context-memory_locomo-data 2>/dev/null || echo ""
 	docker volume rm dmas-long-context-memory_qdrant-data 2>/dev/null || echo ""
 	docker volume rm dmas-long-context-memory_neo4j-data 2>/dev/null || echo ""
 	docker volume rm dmas-long-context-memory_neo4j-logs 2>/dev/null || echo ""
