@@ -1,12 +1,26 @@
 name: dmas-long-context-memory
 services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:latest
+    container_name: toxiproxy
+    networks:
+      - dmas-network
+    ports:
+      - "127.0.0.1:8474:8474"
+      - "127.0.0.1:8005:18005" # listen to Memory
+      - "127.0.0.1:8006:18006" # listen to Responder
+    command: ["-host=0.0.0.0"]
+    restart: unless-stopped
+    labels:
+      - "group=cloud"
+
   locomo:
     build:
       context: ./locomo
       dockerfile: Dockerfile
     container_name: locomo
     ports:
-      - "8002:8000"
+      - "127.0.0.1:8002:8000"
     volumes:
       - locomo-data:/data
     environment:
@@ -24,8 +38,8 @@ services:
     image: qdrant/qdrant:latest
     container_name: qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant-data:/qdrant/storage
     networks:
@@ -43,8 +57,8 @@ services:
     image: neo4j:5.26
     container_name: neo4j
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
     environment:
       - NEO4J_AUTH=neo4j/password
       - NEO4J_PLUGINS=["apoc"]
@@ -70,8 +84,7 @@ services:
       context: ./memory
       dockerfile: Dockerfile
     container_name: memory
-    ports:
-      - "8005:8002"
+    # Port exposed only via toxiproxy (host 8005 -> toxiproxy 18005 -> memory 8002)
     depends_on:
       - qdrant
       - neo4j
@@ -102,8 +115,7 @@ services:
       context: ./responder
       dockerfile: Dockerfile
     container_name: responder
-    ports:
-      - "8006:8003"
+    # Port exposed only via toxiproxy (host 8006 -> toxiproxy 18006 -> responder 8003)
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MODEL=${MODEL:-gpt-4o}
@@ -123,7 +135,7 @@ services:
     image: ollama/ollama:latest
     container_name: ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11435:11434" # Changed to 11435 to avoid conflict with host ollama
     volumes:
       - ollama_data:/root/.ollama
     entrypoint: ["/bin/bash", "-c"]
@@ -131,17 +143,17 @@ services:
       - |
         ollama serve &
         OLLAMA_PID=$$!
-        
+
         echo "Waiting for Ollama server to start..."
         sleep 10
         until ollama list > /dev/null 2>&1; do
           echo "Still waiting for Ollama..."
           sleep 2
         done
-        
+
         echo "Ollama server is ready, pulling model..."
         ollama pull ${OLLAMA_MODEL}
-        
+
         echo "Model pulled successfully"
         wait $$OLLAMA_PID
     networks:
@@ -169,7 +181,7 @@ services:
       dockerfile: Dockerfile
     container_name: coordinator
     ports:
-      - "8003:8001"
+      - "127.0.0.1:8003:8001"
     depends_on:
       locomo:
         condition: service_started
@@ -179,10 +191,12 @@ services:
         condition: service_started
       ollama:
         condition: service_healthy
+      toxiproxy:
+        condition: service_started
     environment:
       - LOCOMO_URL=http://locomo:8000
-      - MEMORY_URL=http://memory:8002
-      - RESPONDER_URL=http://responder:8003
+      - MEMORY_URL=http://toxiproxy:18005
+      - RESPONDER_URL=http://toxiproxy:18006
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL}
     networks:
@@ -212,7 +226,6 @@ volumes:
       group: edge
 networks:
   dmas-network:
-    driver: bridge
-    name: dmas-network
+    external: true
   memory-internal:
     driver: bridge

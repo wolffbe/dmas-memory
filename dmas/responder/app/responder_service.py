@@ -19,22 +19,53 @@ class ResponderService:
             if not memory:
                 memory = "No relevant memory available."
             
-            system_msg = (
-                "You are a helpful assistant that MUST answer questions "
-                "using ONLY the information contained in the provided memories. "
-                "If the memories do not contain the answer, you MUST say that you don't know. "
-                "Do NOT add extra facts or assumptions. "
-                "Be concise but complete."
-            )
+            system_msg = """
+                You are a helpful assistant. 
+                You MUST answer questions using ONLY the information provided in the MEMORIES. 
+                You ARE allowed to do simple reasoning and calculations using those MEMORIES 
+                (for example, converting relative time expressions like 'last year' into a calendar year 
+                if a dated event is available). 
+                You MUST NOT use outside/world knowledge or invent facts that are not logically implied 
+                by the MEMORIES. 
+                If the MEMORIES do not contain enough information to answer, you MUST reply exactly: 
+                "I don't know based on the given memories." 
+                Be concise and factual.
+            """
 
-            user_msg = f"""MEMORIES:
+            user_msg = f"""
+                MEMORIES:
                 {memory}
 
-                QUESTION: {question}
+                QUESTION:
+                {question}
 
-                Answer based only on the MEMORIES above.
-                If the answer cannot be found in the memories, say explicitly: "I don't know based on the given memories."
+                Answer using ONLY the MEMORIES above.
+                You may combine information from different memories and perform simple logical or temporal reasoning.
+                For temporal questions, use timestamps from the memories and, if possible, convert relative expressions
+                (e.g. 'last year', 'two years later') into human-readable dates based only on those timestamps.
+                If the answer is not supported by the memories, reply exactly:
+                "I don't know based on the given memories."
             """
+
+            # old prompt for reference
+            # system_msg = (
+            #     "You are a helpful assistant that MUST answer questions "
+            #     "using ONLY the information contained in the provided memories. "
+            #     "If the memories do not contain the answer, you MUST say that you don't know. "
+            #     "Do NOT add extra facts or assumptions. "
+            #     "Be concise but complete."
+            # )
+
+            # user_msg = f"""MEMORIES:
+            #     {memory}
+
+            #     QUESTION: {question}
+
+            #     Answer based only on the MEMORIES above.
+            #     Use timestamps in the context to provide absolute dates when answering temporal questions.
+            #     If the answer cannot be found in the memories, say explicitly: "I don't know based on the given memories.
+            # """
+
 
             response = self.client.chat.completions.create(
                 model=self.model,

@@ -4,9 +4,10 @@ import asyncio
 from openai import OpenAI
 from typing import Dict, Any, List
 from datetime import datetime
+from dateutil import parser
 from graphiti_core import Graphiti
 from graphiti_core.nodes import EpisodeType
-from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
+from graphiti_core.search.search_config_recipes import COMBINED_HYBRID_SEARCH_RRF
 from app.utils import norm_str, extract_name, parse_timestamp
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,12 @@ class GraphitiService:
         neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
         neo4j_user = os.getenv("NEO4J_USER", "neo4j")
         neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
+        
+        self.SEARCH_LIMIT = int(os.getenv("GRAPHITI_SEARCH_LIMIT", "100"))
+        self.MAX_EPISODIC = int(os.getenv("GRAPHITI_MAX_EPISODIC", "8"))
+        self.MAX_ENTITIES = int(os.getenv("GRAPHITI_MAX_ENTITIES", "4"))
+        self.USE_ENTITIES = os.getenv("GRAPHITI_USE_ENTITIES", "true").lower() == "true"
+        self.MAX_CONTEXT_MEMORIES = int(os.getenv("MAX_CONTEXT_MEMORIES", "12"))
         
         if not (neo4j_uri and neo4j_user and neo4j_password):
             raise ValueError("NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD must be set")
@@ -166,51 +173,75 @@ class GraphitiService:
         return loop.run_until_complete(self.memorize_conversation_async(conv_index, data))
     
     async def remember_async(self, question: str) -> List[str]:
+        """
+        Retrieval Graphiti:
+        - hybrid search on nodes (Entity + Episodic)
+        - priority to Episodic as "core" of the memory
+        - Entity as optional semantic extra.
+        """
         await self._initialize()
         
         try:
-            config = NODE_HYBRID_SEARCH_RRF.model_copy(deep=True)
-            
+            config = COMBINED_HYBRID_SEARCH_RRF.model_copy(deep=True)
+            # Max limit (like Mem0 SEARCH_LIMIT)
+            config.limit = self.SEARCH_LIMIT
+
+            logger.info(
+                "Graphiti search: query=%r limit=%d",
+                question, config.limit
+            )
             results = await self.graphiti._search(query=question, config=config)
             
+            episodic_nodes = getattr(results, "episodes", []) or []
+            entity_nodes = getattr(results, "nodes", []) or []
+            
+            logger.info("Found %d episodic, %d entity nodes", len(episodic_nodes), len(entity_nodes))
+
             memories: List[str] = []
-            for node in results.nodes:
-                summary = (node.summary or "").strip()
-                if summary:
-                    # Try to extract temporal metadata from the node
-                    timestamp = None
-                    
-                    # Check for various temporal attributes
-                    if hasattr(node, 'created_at') and node.created_at:
-                        timestamp = node.created_at
-                    elif hasattr(node, 'valid_at') and node.valid_at:
-                        timestamp = node.valid_at
-                    
-                    # Format memory with timestamp if available
-                    if timestamp:
-                        # Convert timestamp to date string
-                        try:
-                            if isinstance(timestamp, str):
-                                from dateutil import parser
-                                dt = parser.parse(timestamp)
-                            else:
-                                dt = timestamp
-                            date_str = dt.strftime("%Y-%m-%d")
-                            formatted_memory = f"[{date_str}] {summary}"
-                        except Exception as e:
-                            logger.debug("Could not parse timestamp: %s", e)
-                            formatted_memory = summary
-                    else:
-                        formatted_memory = summary
-                    
-                    memories.append(formatted_memory)
-            
+
+            episodic_used = 0
+            entity_used = 0
+
+            # --- 1) Episodic memories first ---
+            for ep in episodic_nodes:
+                if episodic_used >= self.MAX_EPISODIC:
+                    break
+
+                content = (getattr(ep, "content", "") or "").strip()
+                if not content:
+                    continue
+
+                memories.append(content)
+                episodic_used += 1
+
+            # --- 2) Entity summaries to complement ---
+            remaining = self.MAX_CONTEXT_MEMORIES - len(memories)
+            max_entity_to_take = min(remaining, self.MAX_ENTITIES)
+
+            for ent in entity_nodes:
+                if entity_used >= max_entity_to_take:
+                    break
+
+                summary = (getattr(ent, "summary", "") or "").strip()
+                if not summary:
+                    continue
+
+                memories.append(summary)
+                entity_used += 1
+
+            logger.info(
+                "Graphiti final memories: episodic=%d, entity=%d, total=%d",
+                episodic_used,
+                entity_used,
+                len(memories),
+            )
+
             return memories
-            
+
         except Exception as e:
             logger.exception("Graphiti search failed: %s", e)
             return []
-    
+
     def remember(self, question: str) -> List[str]:
         try:
             loop = asyncio.get_event_loop()

@@ -17,6 +17,8 @@ class Mem0Service:
         # Configure mem0 to use remote Qdrant server instead of local storage
         # If we don't explicitly set host/port, mem0 defaults to local path='/tmp/qdrant'
         # So ends up using: Client type: QdrantLocal
+        self.SEARCH_LIMIT = int(os.getenv("MEM0_SEARCH_LIMIT", "100"))
+        self.MAX_CONTEXT_MEMORIES = int(os.getenv("MAX_CONTEXT_MEMORIES", "12"))
         
         config = MemoryConfig(
             vector_store={
@@ -158,7 +160,6 @@ class Mem0Service:
         logger.info("Extracted name from question: '%s'", name)
         
         # General search parameters: same for all questions
-        SEARCH_LIMIT = 100     # Get more results from semantic search
         SEARCH_THRESHOLD = 0.2  # Light threshold: filter only obvious noise
         # The strict responder prompt will filter remaining irrelevant info
 
@@ -168,11 +169,11 @@ class Mem0Service:
             """
             try:
                 logger.info("Mem0 search: query=%r user_id=%r limit=%d threshold=%.2f",
-                            question, user_id, SEARCH_LIMIT, SEARCH_THRESHOLD)
+                            question, user_id, self.SEARCH_LIMIT, SEARCH_THRESHOLD)
                 return self.memory.search(
                     question,
                     user_id=user_id,
-                    limit=SEARCH_LIMIT,
+                    limit=self.SEARCH_LIMIT,
                     threshold=SEARCH_THRESHOLD,
                 )
             except Exception as e:
@@ -240,6 +241,13 @@ class Mem0Service:
                 txt = result.strip()
                 if txt:
                     results.append(txt)
+
+        if len(results) > self.MAX_CONTEXT_MEMORIES:
+            logger.info(
+                "Capping Mem0 memories from %d to %d",
+                len(results), self.MAX_CONTEXT_MEMORIES
+            )
+            results = results[:self.MAX_CONTEXT_MEMORIES]
 
         logger.info("Final formatted memories: %d", len(results))
         return results
