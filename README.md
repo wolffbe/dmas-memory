@@ -19,13 +19,36 @@ The system evaluates memory retrieval accuracy on the [LOCOMO benchmark](https:/
 
 This repository is the official implementation of a study evaluating long-term memory frameworks in Distributed Multi-Agent Systems (DMAS).
 
+[![arXiv](https://img.shields.io/badge/arXiv-2601.07978-b31b1b.svg)](https://arxiv.org/abs/2601.07978)
+
 While DMAS leverage Large Language Models (LLMs) for collaborative intelligence, systematic evaluations of their memory under network constraints are often lacking. This project addresses this gap by comparing **mem0** (vector-based) and **Graphiti** (graph-based) using the **LOCOMO** long-context benchmark.
 
-Our research focuses on identifying the optimal balance between computational efficiency and accuracy. By applying a **Statistical Pareto Efficiency** framework, the study evaluates how network conditions, resource consumption, and financial costs influence the choice of memory architecture.
-If you use this code or our results in your research, please cite our work.
+Our research specifically addresses two core questions:
+1. Which framework provides the best balance between **knowledge retention**, **computational overhead**, and **financial cost**?
+2. How do these metrics vary when operating in a **hybrid cloud–edge environment**?
 
-> **For a detailed breakdown of the methodology and results, please refer to the full paper:**
-> 📄 **[Read the Paper (PDF)](./Cost_and_accuracy_of_long_term_graph_memory_in_distributed_LLM_based_multi_agent_systems.pdf)**
+By applying a **Statistical Pareto Efficiency** framework, the study identifies the optimal memory architecture across varying network conditions.
+
+### Citation
+
+If you use this code or our results in your research, please cite our work:
+
+<details>
+<summary><strong>View BibTeX</strong></summary>
+
+```bibtex
+@misc{wolff2026costaccuracylongtermmemory,
+      title={Cost and accuracy of long-term memory in Distributed Multi-Agent Systems based on Large Language Models},
+      author={Benedict Wolff and Jacopo Bennati},
+      year={2026},
+      eprint={2601.07978},
+      archivePrefix={arXiv},
+      primaryClass={cs.IR},
+      url={https://arxiv.org/abs/2601.07978},
+}
+```
+
+</details>
 
 ## Architecture
 
